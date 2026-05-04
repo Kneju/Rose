@@ -446,7 +446,20 @@
       border: 1px solid #3c3c41;
       border-left: 3px solid transparent;
       background: linear-gradient(to right, rgba(30, 35, 40, 0.8), rgba(30, 35, 40, 0.5));
-      transition: border-left-color 0.2s ease;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .${PANEL_CLASS} .rose-wheel-summary-row:hover {
+      background: linear-gradient(to right, rgba(40, 45, 50, 0.9), rgba(40, 45, 50, 0.7));
+      border-color: #5c5c61;
+      border-left-color: #c8aa6e;
+      transform: translateX(2px);
+    }
+
+    .${PANEL_CLASS} .rose-wheel-summary-row:active {
+      transform: scale(0.98);
+      transition: transform 0.1s ease;
     }
 
     .${PANEL_CLASS} .rose-wheel-summary-row.active {
@@ -629,8 +642,7 @@
       font-style: italic;
     }
 
-    /* Action Buttons */
-    .${PANEL_CLASS} .mod-select-button {
+    .${PANEL_CLASS} .rose-wheel-back-button {
       background: transparent;
       border: 1px solid #c8aa6e;
       color: #c8aa6e;
@@ -644,16 +656,9 @@
       border-radius: 0;
     }
 
-    .${PANEL_CLASS} .mod-select-button:hover {
+    .${PANEL_CLASS} .rose-wheel-back-button:hover {
       background: rgba(200, 170, 110, 0.1);
       box-shadow: 0 0 8px rgba(200, 170, 110, 0.2);
-    }
-
-    .${PANEL_CLASS} .mod-select-button.selected {
-      background: #c8aa6e;
-      color: #010a13;
-      box-shadow: 0 0 10px rgba(200, 170, 110, 0.4);
-      border-color: #c8aa6e;
     }
   `;
 
@@ -972,7 +977,7 @@
     headerButtons.style.gap = "8px";
 
     const backBtn = document.createElement("button");
-    backBtn.className = "mod-select-button";
+    backBtn.className = "rose-wheel-back-button";
     backBtn.textContent = "Back";
     backBtn.style.display = "none";
 
@@ -991,6 +996,8 @@
     SUMMARY_TABS.forEach((tab) => {
       const row = document.createElement("div");
       row.className = "rose-wheel-summary-row";
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
 
       // Left cell: value
       const left = document.createElement("div");
@@ -1019,18 +1026,21 @@
       left.appendChild(label);
       left.appendChild(value);
 
-      const changeBtn = document.createElement("button");
-      changeBtn.className = "mod-select-button";
-      changeBtn.textContent = "Change";
-      changeBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
+      const openPicker = () => {
         switchTab(tab.id);
         setRightPaneMode("picker");
         refreshSummaryValues();
+      };
+
+      row.addEventListener("click", openPicker);
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openPicker();
+        }
       });
 
       row.appendChild(left);
-      row.appendChild(changeBtn);
       panel._summaryRowsByTab[tab.id] = row;
       summaryView.appendChild(row);
     });
