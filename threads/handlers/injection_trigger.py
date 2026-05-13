@@ -511,9 +511,12 @@ class InjectionTrigger:
                 self._inject_custom_mod(dummy_custom_mod, base_skin_name=base_skin_name_for_injection, champion_name=cname)
                 return
             
-            # Skip injection for base/default skins (only if no mods are selected)
+            # Skip injection for base/default skins (only if no mods are selected and
+            # historic mode is not active — if historic is active, the skin resolver
+            # already overrides to the saved skin and injection should proceed normally)
             from utils.core.utilities import is_default_skin
-            if ui_skin_id is not None and is_default_skin(ui_skin_id):
+            historic_active = getattr(self.state, 'historic_mode_active', False)
+            if ui_skin_id is not None and is_default_skin(ui_skin_id) and not historic_active:
                 log.info(f"[INJECT] skipping injection for default skin (skinId={ui_skin_id}) - no mods selected")
                 if self.injection_manager:
                     self.injection_manager.resume_if_suspended()
