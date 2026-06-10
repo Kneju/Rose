@@ -116,15 +116,6 @@ relay_server.py
 # Relay config (contains Worker URL — keep secret)
 party/network/relay_config.py
 
-# Skin encryption (developer-only, contains secrets & protocol logic)
-tools/
-utils/crypto/skin_config.py
-utils/crypto/client_secrets.py
-utils/crypto/key_provider.py
-utils/crypto/integrity.py
-skin-key-worker/
-skin-key-server/
-
 # Cython build artifacts
 *.pyd
 *.c
