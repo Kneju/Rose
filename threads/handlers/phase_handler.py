@@ -6,6 +6,7 @@ Handles phase-specific logic and UI management
 """
 
 import logging
+import threading
 from lcu import LCU
 from lcu.core.lockfile import SWIFTPLAY_QUEUE_ID
 from state import SharedState
@@ -46,6 +47,11 @@ class PhaseHandler:
     def handle_phase_change(self, phase: str, previous_phase: str):
         """Handle phase change"""
         log.info(f"[phase] Phase transition: {previous_phase} → {phase} (swiftplay={self.state.is_swiftplay_mode}, extracted={len(self.state.swiftplay_extracted_mods)}, queue={self.state.current_queue_id})")
+
+        # Re-arm the per-game ChampSelect reset guard once we leave ChampSelect.
+        from threads.handlers.champ_select_reset import note_phase_for_reset
+        note_phase_for_reset(self.state, phase)
+
         if phase == "Matchmaking":
             if self.state.is_swiftplay_mode:
                 log.info("[phase] Matchmaking phase detected in Swiftplay mode - triggering injection")
@@ -104,7 +110,13 @@ class PhaseHandler:
                     else:
                         log.warning("[phase] ChampSelect in Swiftplay mode - no mods to inject")
             else:
-                # Normal ChampSelect handling
+                # Normal ChampSelect handling.
+                # Run the full per-game reset here too (idempotent + guarded) so a
+                # dropped/stale WebSocket can't leave game 2 with stale injection
+                # flags (last_hover_written / loadout_countdown_active / owned_skin_ids).
+                from threads.handlers.champ_select_reset import perform_champ_select_reset
+                perform_champ_select_reset(self.state, self.lcu)
+
                 self.state.locked_champ_id = None
                 self.state.locked_champ_timestamp = 0.0
                 self.state.champion_exchange_triggered = False
@@ -165,18 +177,40 @@ class PhaseHandler:
     
     def _handle_in_progress(self):
         """Handle InProgress phase"""
-        # If Swiftplay overlay is still running, wait for it to finish before
-        # destroying the UI — otherwise the overlay build may be interrupted.
+        # If a Swiftplay overlay is still being built, we must wait for it to
+        # finish before destroying the UI — otherwise the overlay build may be
+        # interrupted.  But that wait must NOT block the phase thread (it would
+        # stall all phase processing for up to 30s and can look like a freeze).
+        # So when a build is in flight, defer the UI destruction to a short-lived
+        # helper thread and return immediately.
         if self.state.is_swiftplay_mode and self.swiftplay_handler:
             overlay_lock = self.swiftplay_handler._overlay_lock
             if overlay_lock.locked():
-                log.info("[phase] InProgress - waiting for Swiftplay overlay to finish before UI destruction")
-            # Acquire and immediately release — just waits for any in-flight overlay
-            if overlay_lock.acquire(timeout=30):
-                overlay_lock.release()
-            else:
-                log.warning("[phase] InProgress - timed out waiting for overlay lock after 30s, proceeding anyway")
+                log.info("[phase] InProgress - Swiftplay overlay in progress; deferring UI destruction to helper thread")
 
+                def _wait_then_destroy():
+                    try:
+                        # Wait for the in-flight overlay build to release the lock
+                        if overlay_lock.acquire(timeout=30):
+                            overlay_lock.release()
+                        else:
+                            log.warning("[phase] InProgress - timed out waiting for overlay lock after 30s, proceeding anyway")
+                    except Exception as e:
+                        log.debug(f"[phase] Error waiting for overlay lock: {e}")
+                    self._destroy_ui_for_in_progress()
+
+                threading.Thread(
+                    target=_wait_then_destroy,
+                    daemon=True,
+                    name="InProgressUIDestroy",
+                ).start()
+                return
+
+        # No in-flight overlay build — destroy the UI inline.
+        self._destroy_ui_for_in_progress()
+
+    def _destroy_ui_for_in_progress(self):
+        """Destroy the in-champ-select UI/chroma panel for the InProgress phase."""
         try:
             from ui.core.user_interface import get_user_interface
             user_interface = get_user_interface(self.state, self.skin_scraper)

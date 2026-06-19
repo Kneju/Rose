@@ -151,7 +151,13 @@ WS_PROBE_WINDOW_MS = 480       # Total probe window (8 * 60ms ~= 480ms)
 # LOADOUT TIMER CONSTANTS
 # =============================================================================
 
-TIMER_HZ_DEFAULT = 1000                     # Countdown display frequency (Hz)
+# Countdown ticker poll rate.  This only governs how soon the ticker NOTICES
+# the injection threshold has been crossed (remaining time is computed from a
+# monotonic clock, so accuracy is unaffected by the rate).  The threshold is
+# ~300ms (SKIN_THRESHOLD_MS_DEFAULT), so 250Hz (4ms granularity) is plenty,
+# while 1000Hz spun a thread 1000x/sec - burning CPU and GIL time right during
+# the countdown/injection window.  Override with --timer-hz if desired.
+TIMER_HZ_DEFAULT = 250                      # Countdown ticker poll frequency (Hz)
 TIMER_HZ_MIN = 10                           # Minimum timer frequency
 TIMER_HZ_MAX = 2000                         # Maximum timer frequency
 TIMER_POLL_PERIOD_S = 0.2                   # Seconds between LCU resync checks

@@ -52,6 +52,10 @@ class WebSocketEventHandler:
         self.timer_manager = timer_manager
         self.injection_manager = injection_manager
         self.swiftplay_handler = swiftplay_handler
+        # Track the last phase THIS handler observed, independent of state.phase
+        # (which the HTTP poller also writes).  Comparing against state.phase let
+        # the poller swallow our ChampSelect event on game 2 - see champ_select_reset.
+        self._ws_last_phase = None
     
     def handle_message(self, ws, msg):
         """Handle incoming WebSocket message"""
@@ -84,11 +88,20 @@ class WebSocketEventHandler:
         ph = payload.get("data")
         # Phase transitions are handled by phase_thread
         # own_champion_locked flag can coexist with any phase
-        if isinstance(ph, str) and ph != self.state.phase and ph is not None:
+        # Compare against our OWN last-seen phase, not state.phase: the HTTP
+        # poller also writes state.phase, and if it advanced to "ChampSelect"
+        # first, comparing to state.phase would swallow our ChampSelect event
+        # for game 2 and skip the per-game reset.
+        if isinstance(ph, str) and ph != self._ws_last_phase and ph is not None:
             if ph in INTERESTING_PHASES:
                 log_status(log, "Phase", ph, "")
-            prev_phase = self.state.phase
+            prev_phase = self._ws_last_phase
+            self._ws_last_phase = ph
             self.state.phase = ph
+
+            # Re-arm the per-game ChampSelect reset guard once we leave ChampSelect
+            from threads.handlers.champ_select_reset import note_phase_for_reset
+            note_phase_for_reset(self.state, ph)
 
             # If leaving ChampSelect, record a timeout for any pending base skin confirmation
             if prev_phase == "ChampSelect" and ph != "ChampSelect":
@@ -134,87 +147,15 @@ class WebSocketEventHandler:
                 self._handle_phase_exit()
     
     def _handle_champ_select_entry(self):
-        """Handle entering ChampSelect phase"""
-        log_event(log, "Entering ChampSelect - resetting state for new game", "")
-        
-        # Reset skin detection state
-        self.state.last_hovered_skin_key = None
-        self.state.last_hovered_skin_id = None
-        self.state.last_hovered_skin_slug = None
-        self.state.ui_last_text = None
-        self.state.ui_skin_id = None
-        
-        # Reset LCU skin selection
-        self.state.selected_skin_id = None
-        self.state.owned_skin_ids.clear()
-        self.state.last_hover_written = False
-        
-        # Reset injection and countdown state
-        self.state.injection_completed = False
-        self.state.loadout_countdown_active = False
-        
-        # Reset champion lock state for new game
-        self.state.locked_champ_id = None
-        self.state.locked_champ_timestamp = 0.0
-        self.state.own_champion_locked = False
-        
-        # Broadcast champion unlock state to JavaScript
-        try:
-            if self.state and hasattr(self.state, 'ui_skin_thread') and self.state.ui_skin_thread:
-                self.state.ui_skin_thread._broadcast_champion_locked(False)
-        except Exception as e:
-            log.debug(f"[ws] Failed to broadcast champion unlock state: {e}")
-        
-        # Reset random skin state
-        self.state.random_skin_name = None
-        self.state.random_skin_id = None
-        self.state.random_mode_active = False
-        
-        # Reset historic mode state
-        self.state.historic_mode_active = False
-        self.state.historic_skin_id = None
-        self.state.historic_first_detection_done = False
+        """Handle entering ChampSelect phase.
 
-        # Clear custom mod selection from previous game so the mod-name popup
-        # doesn't re-appear until the user (or historic auto-select) picks it.
-        self.state.selected_custom_mod = None
-        
-        # Reset exchange tracking
-        if self.champion_lock_handler:
-            self.champion_lock_handler.last_locked_champion_id = None
-        self.state.champion_exchange_triggered = False
-        
-        # Signal main thread to reset skin notification debouncing
-        self.state.reset_skin_notification = True
-        try:
-            self.state.processed_action_ids.clear()
-        except Exception:
-            self.state.processed_action_ids = set()
-        
-        # Request UI initialization when entering ChampSelect
-        try:
-            from ui.core.user_interface import get_user_interface
-            user_interface = get_user_interface(self.state, None)  # skin_scraper not needed here
-            user_interface.reset_skin_state()
-            user_interface._force_reinitialize = True
-            user_interface.request_ui_initialization()
-            log_event(log, "UI reinitialization requested for ChampSelect", "")
-        except Exception as e:
-            log.warning(f"Failed to request UI initialization for ChampSelect: {e}")
-        
-        # Load owned skins immediately when entering ChampSelect
-        try:
-            owned_skins = self.lcu.owned_skins()
-            log.debug(f"[WS] Raw owned skins response: {owned_skins}")
-            if owned_skins and isinstance(owned_skins, list):
-                self.state.owned_skin_ids = set(owned_skins)
-                log.info(f"[WS] Loaded {len(self.state.owned_skin_ids)} owned skins from inventory")
-            else:
-                log.warning(f"[WS] Failed to fetch owned skins from LCU - no data returned (response: {owned_skins})")
-        except Exception as e:
-            log.warning(f"[WS] Error fetching owned skins: {e}")
-        
-        log.debug("[WS] State reset complete - ready for new champion select")
+        Delegates to the shared, idempotent reset so the HTTP poller and this
+        WebSocket handler can't disagree about whether the per-game reset ran.
+        The `champion_lock_handler.last_locked_champion_id` reset is routed via
+        `state.reset_last_locked` (honoured in ChampionLockHandler).
+        """
+        from threads.handlers.champ_select_reset import perform_champ_select_reset
+        perform_champ_select_reset(self.state, self.lcu)
     
     def _handle_in_progress_entry(self):
         """Handle entering InProgress phase"""
