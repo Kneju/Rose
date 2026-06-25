@@ -65,7 +65,7 @@ def is_chroma_id(skin_id: int, chroma_id_map: Optional[dict]) -> bool:
         True if the skin ID is a chroma, False otherwise
     """
     # Check hardcoded special chroma IDs first (always check these)
-    if skin_id in (145071, 103086, 103087, 99991, 99992, 99993, 99994, 99995, 99996, 99997, 99998, 99999, 82998, 82999, 25999, 875998, 875999, 147002, 147003):
+    if skin_id in (145071, 103086, 103087, 99991, 99992, 99993, 99994, 99995, 99996, 99997, 99998, 99999, 82998, 82999, 25999, 875998, 875999, 147002, 147003, 21997, 21998, 21999):
         return True
     
     # Check chroma_id_map if it's not None and not empty
@@ -106,6 +106,10 @@ def get_base_skin_id_for_chroma(chroma_id: int, chroma_id_map: Optional[dict]) -
         if chroma_id in (147002, 147003):
             return 147001  # KDA Seraphine base skin ID
         
+        # Check if this is a Gun Goddess Miss Fortune form
+        if chroma_id in (21997, 21998, 21999):
+            return 21016  # Gun Goddess Miss Fortune base skin ID
+        
         # Special case: Elementalist Lux base skin (99007)
         if chroma_id == 99007:
             return 99007  # Elementalist Lux base skin ID
@@ -125,6 +129,10 @@ def get_base_skin_id_for_chroma(chroma_id: int, chroma_id_map: Optional[dict]) -
         # Special case: KDA Seraphine base skin (147001)
         if chroma_id == 147001:
             return 147001  # KDA Seraphine base skin ID
+
+        # Special case: Gun Goddess Miss Fortune base skin (21016)
+        if chroma_id == 21016:
+            return 21016  # Gun Goddess Miss Fortune base skin ID
 
         # Special case: Risen Legend Kai'Sa (145070)
         if chroma_id == 145070:
@@ -176,7 +184,7 @@ def is_base_skin_of_chroma_set(skin_id: int, chroma_id_map: Optional[dict]) -> b
                 return True
     
     # Special cases that are base skins but might not be in chroma_id_map
-    special_base_skins = [99007, 82054, 25080, 145070, 103085]
+    special_base_skins = [99007, 82054, 25080, 145070, 103085, 21016]
     if skin_id in special_base_skins:
         return True
     

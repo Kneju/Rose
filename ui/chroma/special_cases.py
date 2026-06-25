@@ -85,6 +85,17 @@ class ChromaSpecialCases:
         return forms
     
     @staticmethod
+    def get_missfortune_forms() -> List[Dict]:
+        """Get Gun Goddess Miss Fortune Forms data structure (equivalent to chromas)"""
+        forms = [
+            {'id': 21997, 'name': 'Zero Hour', 'colors': [], 'is_owned': False, 'form_path': 'MissFortune/Forms/Gun Goddess Miss Fortune Zero Hour.zip'},
+            {'id': 21998, 'name': 'Royal Arms', 'colors': [], 'is_owned': False, 'form_path': 'MissFortune/Forms/Gun Goddess Miss Fortune Royal Arms.zip'},
+            {'id': 21999, 'name': 'Starswarm', 'colors': [], 'is_owned': False, 'form_path': 'MissFortune/Forms/Gun Goddess Miss Fortune Starswarm.zip'},
+        ]
+        log.debug(f"[CHROMA] Created {len(forms)} Gun Goddess Miss Fortune Forms with real IDs (21997-21999)")
+        return forms
+    
+    @staticmethod
     def get_hol_chromas() -> List[Dict]:
         """Get Risen Legend Kai'Sa HOL chroma data structure (equivalent to chromas)"""
         chromas = [
@@ -134,6 +145,11 @@ class ChromaSpecialCases:
         return chroma_id in (234994, 234995, 234996, 234997, 234998, 234999)
     
     @staticmethod
+    def is_missfortune_form(chroma_id: int) -> bool:
+        """Check if chroma_id is a Gun Goddess Miss Fortune form"""
+        return chroma_id in (21997, 21998, 21999)
+    
+    @staticmethod
     def is_hol_chroma(chroma_id: int) -> bool:
         """Check if chroma_id is a HOL chroma"""
         return chroma_id in (145071, 103086, 103087)
@@ -181,6 +197,14 @@ class ChromaSpecialCases:
         elif skin_id in (234994, 234995, 234996, 234997, 234998, 234999):
             return ChromaSpecialCases.get_viego_forms()
         
+        # Special case: Gun Goddess Miss Fortune (skin ID 21016) has Forms instead of chromas
+        elif skin_id == 21016:
+            return ChromaSpecialCases.get_missfortune_forms()
+        
+        # Special case: Gun Goddess Miss Fortune forms (IDs 21997-21999) are treated as forms of base skin
+        elif skin_id in (21997, 21998, 21999):
+            return ChromaSpecialCases.get_missfortune_forms()
+        
         # Special case: Risen Legend Kai'Sa (skin ID 145070) has HOL chroma instead of regular chromas
         elif skin_id == 145070:
             return ChromaSpecialCases.get_hol_chromas()
@@ -227,6 +251,12 @@ class ChromaSpecialCases:
         
         if ChromaSpecialCases.is_viego_form(chroma_id):
             return 234043  # Viego base skin ID
+        
+        if ChromaSpecialCases.is_missfortune_form(chroma_id):
+            return 21016  # Gun Goddess Miss Fortune base skin ID
+        
+        if chroma_id == 21016:
+            return 21016  # Gun Goddess Miss Fortune base skin ID
         
         if chroma_id == 145071:
             return 145070  # Risen Legend Kai'Sa base skin ID

@@ -135,6 +135,10 @@ class ChromaSelector:
             elif ChromaSpecialCases.is_viego_form(skin_id):
                 base_skin_id = 234043  # Viego base skin ID
                 log.debug(f"[CHROMA] Detected Viego form {skin_id}, using base skin {base_skin_id} for chroma data")
+            # Special handling for Gun Goddess Miss Fortune forms (IDs 21997-21999)
+            elif ChromaSpecialCases.is_missfortune_form(skin_id):
+                base_skin_id = 21016  # Gun Goddess Miss Fortune base skin ID
+                log.debug(f"[CHROMA] Detected Gun Goddess Miss Fortune form {skin_id}, using base skin {base_skin_id} for chroma data")
             elif self.skin_scraper and self.skin_scraper.cache:
                 if skin_id in self.skin_scraper.cache.chroma_id_map:
                     # This is a chroma, get its base skin ID
@@ -222,6 +226,13 @@ class ChromaSelector:
         elif current_base_id == 147001:
             current_base_id = 147001
             log.debug(f"[CHROMA] Current skin {self.current_skin_id} is KDA Seraphine base skin")
+        # Special handling for Gun Goddess Miss Fortune forms
+        elif ChromaSpecialCases.is_missfortune_form(current_base_id):
+            current_base_id = 21016
+            log.debug(f"[CHROMA] Current skin {self.current_skin_id} is Gun Goddess Miss Fortune form of base skin {current_base_id}")
+        elif current_base_id == 21016:
+            current_base_id = 21016
+            log.debug(f"[CHROMA] Current skin {self.current_skin_id} is Gun Goddess Miss Fortune base skin")
         elif self.skin_scraper and self.skin_scraper.cache and current_base_id in self.skin_scraper.cache.chroma_id_map:
             chroma_data = self.skin_scraper.cache.chroma_id_map[current_base_id]
             current_base_id = chroma_data.get('skinId', current_base_id)
@@ -262,6 +273,13 @@ class ChromaSelector:
         elif new_base_id == 147001:
             new_base_id = 147001
             log.debug(f"[CHROMA] New skin {skin_id} is KDA Seraphine base skin")
+        # Special handling for Gun Goddess Miss Fortune forms
+        elif ChromaSpecialCases.is_missfortune_form(new_base_id):
+            new_base_id = 21016
+            log.debug(f"[CHROMA] New skin {skin_id} is Gun Goddess Miss Fortune form of base skin {new_base_id}")
+        elif new_base_id == 21016:
+            new_base_id = 21016
+            log.debug(f"[CHROMA] New skin {skin_id} is Gun Goddess Miss Fortune base skin")
         elif self.skin_scraper and self.skin_scraper.cache and new_base_id in self.skin_scraper.cache.chroma_id_map:
             chroma_data = self.skin_scraper.cache.chroma_id_map[new_base_id]
             new_base_id = chroma_data.get('skinId', new_base_id)

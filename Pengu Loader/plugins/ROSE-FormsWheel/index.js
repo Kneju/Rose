@@ -97,6 +97,16 @@
         championId: 234,
       },
     ],
+    [
+      21016,
+      {
+        // Gun Goddess Miss Fortune - has Forms, not chromas
+        buttonFolder: "ggmf_buttons",
+        formIds: [21016, 21997, 21998, 21999], // Base + 3 forms
+        formNames: ["Scarlet Fair", "Zero Hour", "Royal Arms", "Starswarm"],
+        championId: 21,
+      },
+    ],
   ]);
 
   /**
@@ -763,6 +773,14 @@
       return null;
     };
 
+    // Helper to get buttonIconPath for Gun Goddess Miss Fortune forms
+    const getButtonIconPathForMissFortune = (chromaId) => {
+      if (isMissFortune(chromaId)) {
+        return getMissFortuneButtonIconPath(chromaId);
+      }
+      return null;
+    };
+
     // Helper to get buttonIconPath for HOL chromas (Ahri only - Kaisa now uses forms)
     const getButtonIconPathForHol = (chromaId) => {
       if (isHolChroma(chromaId)) {
@@ -796,6 +814,7 @@
         getButtonIconPathForJinx(data.selectedChromaId) ||
         getButtonIconPathForKaisa(data.selectedChromaId) ||
         getButtonIconPathForViego(data.selectedChromaId) ||
+        getButtonIconPathForMissFortune(data.selectedChromaId) ||
         getButtonIconPathForHol(data.selectedChromaId) ||
         (selectedChromaData && selectedChromaData.id === data.selectedChromaId
           ? selectedChromaData.buttonIconPath
@@ -1164,6 +1183,47 @@
         log.debug(
           `[FormsWheel] Viego form detected: ${data.selectedChromaId}, buttonIconPath: ${selectedChromaData.buttonIconPath}`
         );
+      } else if (isMissFortune(data.selectedChromaId)) {
+        // Gun Goddess Miss Fortune form - get data from local functions
+        const baseFormId = 21016;
+        const missFortuneChampionId = 21;
+
+        // Check if it's the base form or a form
+        if (data.selectedChromaId === baseFormId) {
+          // Base form
+          selectedChromaData = {
+            id: data.selectedChromaId,
+            primaryColor: null,
+            colors: [],
+            name: "Scarlet Fair",
+            buttonIconPath: getMissFortuneButtonIconPath(baseFormId),
+          };
+        } else {
+          // Gun Goddess Miss Fortune form (21997-21999)
+          const forms = getMissFortuneForms();
+          const form = forms.find((f) => f.id === data.selectedChromaId);
+          if (form) {
+            selectedChromaData = {
+              id: data.selectedChromaId,
+              primaryColor: null,
+              colors: [],
+              name: form.name || "Selected",
+              buttonIconPath: getMissFortuneButtonIconPath(form.id),
+            };
+          } else {
+            // Form not found - use button icon path anyway
+            selectedChromaData = {
+              id: data.selectedChromaId,
+              primaryColor: null,
+              colors: [],
+              name: "Selected",
+              buttonIconPath: getMissFortuneButtonIconPath(data.selectedChromaId),
+            };
+          }
+        }
+        log.debug(
+          `[FormsWheel] Gun Goddess Miss Fortune form detected: ${data.selectedChromaId}, buttonIconPath: ${selectedChromaData.buttonIconPath}`
+        );
       } else if (isHolChroma(data.selectedChromaId)) {
         // HOL chroma - get data from local functions (Ahri only - Kaisa now uses forms)
         let baseSkinId;
@@ -1325,6 +1385,8 @@
         buttonIconPath = getKaisaButtonIconPath(data.currentSkinId);
       } else if (isViego(data.currentSkinId)) {
         buttonIconPath = getViegoButtonIconPath(data.currentSkinId);
+      } else if (isMissFortune(data.currentSkinId)) {
+        buttonIconPath = getMissFortuneButtonIconPath(data.currentSkinId);
       } else if (isHolChroma(data.currentSkinId)) {
         // Determine base skin ID and champion ID for HOL (Ahri only - Kaisa now uses forms)
         let baseSkinId;
@@ -2037,6 +2099,58 @@
     return path;
   }
 
+  // Get Gun Goddess Miss Fortune Forms data locally
+  function getMissFortuneForms() {
+    const forms = [
+      {
+        id: 21997,
+        name: "Zero Hour",
+        colors: [],
+        form_path: "MissFortune/Forms/Gun Goddess Miss Fortune Zero Hour.zip",
+      },
+      {
+        id: 21998,
+        name: "Royal Arms",
+        colors: [],
+        form_path: "MissFortune/Forms/Gun Goddess Miss Fortune Royal Arms.zip",
+      },
+      {
+        id: 21999,
+        name: "Starswarm",
+        colors: [],
+        form_path: "MissFortune/Forms/Gun Goddess Miss Fortune Starswarm.zip",
+      },
+    ];
+    log.debug(
+      `[getMissFortuneForms] Created ${forms.length} Gun Goddess Miss Fortune Forms with real IDs (21997-21999)`
+    );
+    return forms;
+  }
+
+  // Get local button icon path for Gun Goddess Miss Fortune forms
+  // Path: assets/ggmf_buttons/{button_number}.png
+  // Maps: 21016 (base) -> 1.png, 21997 (Zero Hour) -> 2.png, 21998 (Royal Arms) -> 3.png, 21999 (Starswarm) -> 4.png
+  function getMissFortuneButtonIconPath(formId) {
+    // Request icon path from Python via bridge
+    // Python will return the local file path or serve it via HTTP
+    // Map form IDs to button numbers
+    let buttonNumber;
+    if (formId === 21016) {
+      buttonNumber = 1; // Base skin
+    } else if (formId === 21997) {
+      buttonNumber = 2; // Zero Hour
+    } else if (formId === 21998) {
+      buttonNumber = 3; // Royal Arms
+    } else if (formId === 21999) {
+      buttonNumber = 4; // Starswarm
+    } else {
+      // Fallback to form ID if unknown
+      buttonNumber = formId;
+    }
+    const path = `local-asset://ggmf_buttons/${buttonNumber}.png`;
+    return path;
+  }
+
   // Get button icon path for HOL chromas (Ahri only - Kaisa now uses forms)
   function getHolButtonIconPath(championId, chromaId, baseSkinId) {
     // Ahri forms (103085, 103086, 103087) use fakerahri_buttons folder with numbered images
@@ -2121,6 +2235,13 @@
       Number.isFinite(skinId) &&
       (skinId === 234043 || skinId === 234994 || skinId === 234995 || 
        skinId === 234996 || skinId === 234997 || skinId === 234998 || skinId === 234999)
+    );
+  }
+
+  function isMissFortune(skinId) {
+    return (
+      Number.isFinite(skinId) &&
+      (skinId === 21016 || skinId === 21997 || skinId === 21998 || skinId === 21999)
     );
   }
 
@@ -3681,6 +3802,62 @@
             name: form.name,
             imagePath: getLocalPreviewPath(
               viegoChampionId,
+              baseFormId,
+              form.id,
+              false
+            ),
+            colors: form.colors || [],
+            primaryColor: null, // Forms don't have colors
+            selected: false,
+            locked: false, // Forms are clickable
+            buttonIconPath: buttonIconPath,
+            form_path: form.form_path,
+          };
+        });
+
+        const allChromas = [baseSkinChroma, ...formList];
+        return markSelectedChroma(allChromas, currentSkinId);
+      }
+    }
+
+    // SPECIAL CASE: Gun Goddess Miss Fortune (skin ID 21016) - use local Forms data
+    // FormsWheel: Handle Miss Fortune forms using SUPPORTED_SKINS configuration
+    if (baseSkinId === 21016 || baseSkinId === 21997 || baseSkinId === 21998 || baseSkinId === 21999) {
+      const skinConfig = getSkinConfig(baseSkinId);
+      if (skinConfig && isSupportedSkin(baseSkinId)) {
+        log.debug(
+          `[getChromaData] Gun Goddess Miss Fortune detected (base skin: 21016) - using local Forms data`
+        );
+        const forms = getMissFortuneForms();
+        const baseFormId = 21016; // Always use base skin ID
+        const missFortuneChampionId = 21; // Miss Fortune champion ID
+
+        // Base skin (Gun Goddess Miss Fortune base)
+        const baseSkinChroma = {
+          id: baseFormId,
+          name: "Scarlet Fair",
+          imagePath: getLocalPreviewPath(
+            missFortuneChampionId,
+            baseFormId,
+            baseFormId,
+            true
+          ),
+          colors: [],
+          primaryColor: null,
+          selected: false,
+          locked: false,
+          buttonIconPath: `local-asset://${skinConfig.buttonFolder}/1.png`, // Use index-based path
+        };
+
+        // Forms (IDs 21997-21999) - use index-based button paths
+        const formList = forms.map((form, index) => {
+          const buttonIconPath = `local-asset://${skinConfig.buttonFolder}/${index + 2
+            }.png`; // 2.png, 3.png, 4.png
+          return {
+            id: form.id,
+            name: form.name,
+            imagePath: getLocalPreviewPath(
+              missFortuneChampionId,
               baseFormId,
               form.id,
               false

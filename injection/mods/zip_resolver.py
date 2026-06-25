@@ -120,6 +120,10 @@ class ZipResolver:
             if chroma_id in (147002, 147003):
                 return self._resolve_seraphine_form(chroma_id)
             
+            # Special handling for Gun Goddess Miss Fortune forms (IDs 21997-21999)
+            if chroma_id in (21997, 21998, 21999):
+                return self._resolve_missfortune_form(chroma_id)
+            
             # For regular chromas, look for {champion_id}/{skin_id}/{chroma_id}/{chroma_id}.zip
             if not champion_id:
                 log.warning(f"[INJECT] No champion_id provided for chroma lookup: {chroma_id}")
@@ -267,5 +271,27 @@ class ZipResolver:
             log_success(log, f"Found KDA Seraphine {form_name} form: {found.name}", "✨")
             return found
         log.warning(f"[INJECT] KDA Seraphine {form_name} form file not found")
+        return None
+    
+    def _resolve_missfortune_form(self, chroma_id: int) -> Optional[Path]:
+        """Resolve Gun Goddess Miss Fortune form by chroma ID"""
+        log.info(f"[INJECT] Detected Gun Goddess Miss Fortune form ID: {chroma_id}")
+        
+        # Map IDs to form names
+        form_names = {
+            21997: 'Zero Hour',
+            21998: 'Royal Arms',
+            21999: 'Starswarm'
+        }
+        
+        form_name = form_names.get(chroma_id, 'Unknown')
+        log.info(f"[INJECT] Looking for Gun Goddess Miss Fortune {form_name} form")
+        
+        # Look for the form file in the Miss Fortune directory
+        found = _rglob_by_extensions(self.zips_dir, f"Gun Goddess Miss Fortune {form_name}")
+        if found:
+            log_success(log, f"Found Gun Goddess Miss Fortune {form_name} form: {found.name}", "✨")
+            return found
+        log.warning(f"[INJECT] Gun Goddess Miss Fortune {form_name} form file not found")
         return None
 
