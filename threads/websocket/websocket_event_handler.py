@@ -52,6 +52,7 @@ class WebSocketEventHandler:
         self.timer_manager = timer_manager
         self.injection_manager = injection_manager
         self.swiftplay_handler = swiftplay_handler
+        self._ws_last_phase = None
     
     def handle_message(self, ws, msg):
         """Handle incoming WebSocket message"""
@@ -84,11 +85,15 @@ class WebSocketEventHandler:
         ph = payload.get("data")
         # Phase transitions are handled by phase_thread
         # own_champion_locked flag can coexist with any phase
-        if isinstance(ph, str) and ph != self.state.phase and ph is not None:
+        if isinstance(ph, str) and ph != self._ws_last_phase and ph is not None:
             if ph in INTERESTING_PHASES:
                 log_status(log, "Phase", ph, "")
-            prev_phase = self.state.phase
+            prev_phase = self._ws_last_phase
+            self._ws_last_phase = ph
             self.state.phase = ph
+
+            from threads.handlers.champ_select_reset import note_phase_for_reset
+            note_phase_for_reset(self.state, ph)
 
             # If leaving ChampSelect, record a timeout for any pending base skin confirmation
             if prev_phase == "ChampSelect" and ph != "ChampSelect":
@@ -135,6 +140,10 @@ class WebSocketEventHandler:
     
     def _handle_champ_select_entry(self):
         """Handle entering ChampSelect phase"""
+        from threads.handlers.champ_select_reset import perform_champ_select_reset
+        perform_champ_select_reset(self.state, self.lcu)
+        return
+
         log_event(log, "Entering ChampSelect - resetting state for new game", "")
         
         # Reset skin detection state

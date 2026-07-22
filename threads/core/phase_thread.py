@@ -70,6 +70,8 @@ class PhaseThread(threading.Thread):
             # Use a grace period to avoid wiping Swiftplay state on transient
             # API hiccups (the LCU can briefly return None during transitions).
             if ph is None:
+                from threads.handlers.champ_select_reset import note_phase_for_reset
+                note_phase_for_reset(self.state, None)
                 self.state.phase = None
                 self._null_phase_streak += 1
 
