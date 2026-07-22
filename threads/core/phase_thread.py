@@ -55,89 +55,75 @@ class PhaseThread(threading.Thread):
         state.swiftplay_handler = self.swiftplay_handler
 
     def run(self):
-        """Main thread loop.
-
-        The body is wrapped so a single unhandled exception in phase/lobby/
-        swiftplay handling can't kill the thread permanently (which previously
-        stopped all phase detection for the rest of the session - the
-        "works once, then stops" symptom).
-        """
+        """Main thread loop"""
         while not self.state.stop:
             try:
-                self._run_once()
-            except Exception as e:  # noqa: BLE001
-                log.error(f"[phase] Unhandled error in phase loop (continuing): {e}", exc_info=True)
+                self.lcu.refresh_if_needed()
+            except (OSError, ConnectionError) as e:
+                log.debug(f"LCU refresh failed in phase thread: {e}")
+            
+            ph = self.lcu.phase if self.lcu.ok else None
+            if ph == "None":
+                ph = None
+            
+            # If phase is unknown (None), skip handling.
+            # Use a grace period to avoid wiping Swiftplay state on transient
+            # API hiccups (the LCU can briefly return None during transitions).
+            if ph is None:
+                self.state.phase = None
+                self._null_phase_streak += 1
+
+                # Only clean up after several consecutive None polls (~1.5-2.5 s)
+                if self._null_phase_streak >= 3:
+                    if self.state.is_swiftplay_mode:
+                        # Swiftplay flag is still set but LCU returned None for
+                        # several polls — the session is gone.  Full cleanup.
+                        log.info("[phase] Null-phase streak in Swiftplay mode - cleaning up")
+                        self.swiftplay_handler.cleanup_swiftplay_exit()
+                    elif self.state.swiftplay_extracted_mods:
+                        # Flag already cleared but orphaned mods remain
+                        self.state.swiftplay_extracted_mods = []
+
                 time.sleep(self.interval)
+                continue
 
-    def _run_once(self):
-        """Single poll iteration (one phase tick)."""
-        try:
-            self.lcu.refresh_if_needed()
-        except (OSError, ConnectionError) as e:
-            log.debug(f"LCU refresh failed in phase thread: {e}")
+            self._null_phase_streak = 0
+            phase_changed = (ph != self.last_phase)
 
-        ph = self.lcu.phase if self.lcu.ok else None
-        if ph == "None":
-            ph = None
+            if ph == "Lobby":
+                self.lobby_processor.process_lobby_state(force=phase_changed)
 
-        # If phase is unknown (None), skip handling.
-        # Use a grace period to avoid wiping Swiftplay state on transient
-        # API hiccups (the LCU can briefly return None during transitions).
-        if ph is None:
-            self.state.phase = None
-            self._null_phase_streak += 1
+            if phase_changed:
+                # Broadcast every phase transition so JS plugins can pause work during InProgress
+                if ph is not None:
+                    try:
+                        ui_thread = getattr(self.state, "ui_skin_thread", None)
+                        if ui_thread:
+                            ui_thread._broadcast_phase_change(ph)
+                    except Exception as e:
+                        log.debug(f"[phase] Failed to broadcast phase change to JavaScript: {e}")
 
-            # Only clean up after several consecutive None polls (~1.5-2.5 s)
-            if self._null_phase_streak >= 3:
-                if self.state.is_swiftplay_mode:
-                    # Swiftplay flag is still set but LCU returned None for
-                    # several polls — the session is gone.  Full cleanup.
-                    log.info("[phase] Null-phase streak in Swiftplay mode - cleaning up")
-                    self.swiftplay_handler.cleanup_swiftplay_exit()
-                elif self.state.swiftplay_extracted_mods:
-                    # Flag already cleared but orphaned mods remain
-                    self.state.swiftplay_extracted_mods = []
+                # Log phase transition
+                if ph is not None and self.log_transitions and ph in self.INTERESTING:
+                    log_status(log, "Phase", ph, "")
 
-            time.sleep(self.interval)
-            return
+                # Update phase
+                if ph is not None:
+                    self.state.phase = ph
 
-        self._null_phase_streak = 0
-        phase_changed = (ph != self.last_phase)
+                # Handle phase change
+                self.phase_handler.handle_phase_change(ph, self.last_phase)
 
-        if ph == "Lobby":
-            self.lobby_processor.process_lobby_state(force=phase_changed)
+                # Reset lobby tracking when leaving lobby
+                if self.last_phase == "Lobby" and ph != "Lobby":
+                    self.lobby_processor.reset_lobby_tracking()
 
-        if phase_changed:
-            # Broadcast every phase transition so JS plugins can pause work during InProgress
-            if ph is not None:
-                try:
-                    ui_thread = getattr(self.state, "ui_skin_thread", None)
-                    if ui_thread:
-                        ui_thread._broadcast_phase_change(ph)
-                except Exception as e:
-                    log.debug(f"[phase] Failed to broadcast phase change to JavaScript: {e}")
+                self.last_phase = ph
+            elif ph == "Lobby":
+                # Phase unchanged but still in lobby – continue monitoring
+                self.lobby_processor.process_lobby_state(force=False)
 
-            # Log phase transition
-            if ph is not None and self.log_transitions and ph in self.INTERESTING:
-                log_status(log, "Phase", ph, "")
-
-            # Update phase
-            if ph is not None:
-                self.state.phase = ph
-
-            # Handle phase change
-            self.phase_handler.handle_phase_change(ph, self.last_phase)
-
-            # Reset lobby tracking when leaving lobby
-            if self.last_phase == "Lobby" and ph != "Lobby":
-                self.lobby_processor.reset_lobby_tracking()
-
-            self.last_phase = ph
-        elif ph == "Lobby":
-            # Phase unchanged but still in lobby – continue monitoring
-            self.lobby_processor.process_lobby_state(force=False)
-
-        if ph == "InProgress":
-            time.sleep(max(self.interval, PHASE_POLL_INTERVAL_INGAME))
-        else:
-            time.sleep(self.interval)
+            if ph == "InProgress":
+                time.sleep(max(self.interval, PHASE_POLL_INTERVAL_INGAME))
+            else:
+                time.sleep(self.interval)

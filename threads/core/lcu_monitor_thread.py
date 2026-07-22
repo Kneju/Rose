@@ -15,12 +15,6 @@ from config import LCU_MONITOR_INTERVAL, LCU_MONITOR_INTERVAL_INGAME
 
 log = get_logger()
 
-# Number of consecutive "not ok" polls before we treat the LCU as truly
-# disconnected.  The lockfile mtime can blip when the client minimizes to tray
-# on game start, briefly making `lcu.ok` False; firing a full disconnect there
-# tears down the UI and wipes per-game state ("disables itself on game entry").
-LCU_DISCONNECT_DEBOUNCE_POLLS = 3
-
 
 class LCUMonitorThread(threading.Thread):
     """Thread for monitoring LCU connection and language changes"""
@@ -40,7 +34,6 @@ class LCUMonitorThread(threading.Thread):
         self.skin_scraper = skin_scraper  # Optional: for skin scraping on lock
         self.injection_manager = injection_manager  # Optional: for injection notification
         self.last_lcu_ok = False
-        self._lcu_down_streak = 0  # Consecutive polls where lcu.ok was False (for debounce)
         self.last_language = None
         self.waiting_for_connection = False
         self.ws_connected = False
@@ -57,21 +50,9 @@ class LCUMonitorThread(threading.Thread):
             try:
                 current_lcu_ok = self.lcu.ok
                 current_ws_connected = self._is_ws_connected()
-
-                # Debounce transient LCU drops so a single false-positive poll
-                # (e.g. lockfile mtime blip on game start) doesn't trigger a full
-                # disconnect/teardown.  effective_lcu_ok stays True during the
-                # short grace window.
-                if current_lcu_ok:
-                    self._lcu_down_streak = 0
-                else:
-                    self._lcu_down_streak += 1
-                effective_lcu_ok = current_lcu_ok or (
-                    self._lcu_down_streak < LCU_DISCONNECT_DEBOUNCE_POLLS
-                )
-
+                
                 # Connection lost
-                if self.last_lcu_ok and not effective_lcu_ok:
+                if self.last_lcu_ok and not current_lcu_ok:
                     log.info("LCU connection lost - waiting for reconnection...")
                     self.waiting_for_connection = True
                     self.last_language = None
@@ -83,7 +64,7 @@ class LCUMonitorThread(threading.Thread):
                         self.disconnect_callback()
                 
                 # Connection restored
-                elif not self.last_lcu_ok and effective_lcu_ok:
+                elif not self.last_lcu_ok and current_lcu_ok:
                     if self.waiting_for_connection:
                         log.info("LCU reconnected - waiting for WebSocket...")
                         self.waiting_for_connection = False
@@ -142,7 +123,7 @@ class LCUMonitorThread(threading.Thread):
                 if current_lcu_ok and current_ws_connected:
                     self._maybe_recover_locked_champ_select_state()
 
-                self.last_lcu_ok = effective_lcu_ok
+                self.last_lcu_ok = current_lcu_ok
 
             except Exception as e:
                 log.debug(f"LCU monitor error: {e}")

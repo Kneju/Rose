@@ -43,13 +43,6 @@ class ChampionLockHandler:
     
     def handle_session_locks(self, sess: dict):
         """Handle champion locks from session data"""
-        # The champ-select reset (which may run on the poll thread, with no access
-        # to this handler) asks us to forget the last lock via this flag, so the
-        # first lock of a new game isn't misread as a champion exchange.
-        if getattr(self.state, "reset_last_locked", False):
-            self.last_locked_champion_id = None
-            self.state.reset_last_locked = False
-
         new_locks = compute_locked(sess)
         prev_cells = set(self.state.locks_by_cell.keys())
         curr_cells = set(new_locks.keys())
