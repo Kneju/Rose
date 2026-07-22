@@ -9,14 +9,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import shutil
+import tempfile
+import threading
 from pathlib import Path
 from typing import List, Optional
 
+from utils.core.junction import safe_remove_entry
 from utils.core.logging import get_logger
 from utils.core.paths import get_user_data_dir
+from utils.core.safe_extract import safe_extractall
 from utils.core.utilities import get_champion_id_from_skin_id
 
 log = get_logger()
+_STORAGE_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,8 @@ class SkinModEntry:
 
 class ModStorageService:
     """Service exposing the on-disk mods hierarchy."""
+
+    ARCHIVE_SCAN_INTERVAL_SECONDS = 1.0
 
     CATEGORY_SKINS = "skins"
     CATEGORY_MAPS = "maps"
@@ -57,10 +64,55 @@ class ModStorageService:
         CATEGORY_OTHERS,
     )
 
-    def __init__(self, mods_root: Optional[Path] = None):
+    def __init__(self, mods_root: Optional[Path] = None, watch_archives: bool = False):
         self.mods_root = mods_root or (get_user_data_dir() / "mods")
+        self._storage_lock = _STORAGE_LOCK
+        self._watcher_stop = threading.Event()
+        self._watcher_thread: Optional[threading.Thread] = None
+        self._failed_archive_signatures: dict[Path, tuple[int, int]] = {}
         self.mods_root.mkdir(parents=True, exist_ok=True)
         self._ensure_mods_root_layout()
+
+        if watch_archives:
+            self._watcher_thread = threading.Thread(
+                target=self._watch_archives,
+                name="RoseModArchiveWatcher",
+                daemon=True,
+            )
+            self._watcher_thread.start()
+
+    def _extract_archives_from_all_directories(self) -> None:
+        """Extract archives from every supported mod directory."""
+        skins_dir = self.skins_dir
+        if skins_dir.exists() and skins_dir.is_dir():
+            for skin_dir in skins_dir.iterdir():
+                if skin_dir.is_dir():
+                    self._extract_archives_in_directory(skin_dir)
+
+        for category in self.ROOT_CATEGORIES:
+            if category == self.CATEGORY_SKINS:
+                continue
+            self._extract_archives_in_directory(self.mods_root / category)
+
+    def _watch_archives(self) -> None:
+        """Watch the mod tree and extract newly added archives."""
+        while not self._watcher_stop.is_set():
+            try:
+                with self._storage_lock:
+                    self._extract_archives_from_all_directories()
+            except Exception:  # noqa: BLE001
+                log.exception("[ModStorage] Archive watcher scan failed")
+
+            if self._watcher_stop.wait(self.ARCHIVE_SCAN_INTERVAL_SECONDS):
+                break
+
+    def stop(self) -> None:
+        """Stop the background archive watcher, if it is running."""
+        self._watcher_stop.set()
+        watcher = self._watcher_thread
+        if watcher and watcher.is_alive() and watcher is not threading.current_thread():
+            watcher.join(timeout=2.0)
+        self._watcher_thread = None
 
     def _ensure_mods_root_layout(self) -> None:
         """
@@ -96,7 +148,57 @@ class ModStorageService:
     def get_skin_dir(self, skin_id: int | str) -> Path:
         return self.skins_dir / str(skin_id)
 
+    def _extract_archives_in_directory(self, directory: Path) -> None:
+        """Convert dropped ZIP/fantome mods into extracted mod folders.
+
+        Archives are extracted into a temporary sibling directory first. The
+        source archive is removed only after extraction succeeds, so a broken
+        or unsafe archive remains available for troubleshooting/retry.
+        """
+        if not directory.exists() or not directory.is_dir():
+            return
+
+        for archive in sorted(directory.iterdir(), key=lambda p: p.name.lower()):
+            if not archive.is_file() or archive.suffix.lower() not in {".zip", ".fantome"}:
+                continue
+
+            try:
+                stat = archive.stat()
+                signature = (stat.st_size, stat.st_mtime_ns)
+            except OSError:
+                continue
+            if self._failed_archive_signatures.get(archive) == signature:
+                continue
+
+            target = directory / archive.stem
+            temporary = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{archive.stem}.extracting-",
+                    dir=str(directory),
+                )
+            )
+
+            try:
+                safe_extractall(archive, temporary)
+                if not any(temporary.iterdir()):
+                    raise ValueError("archive contains no files")
+
+                if target.exists() or target.is_symlink():
+                    safe_remove_entry(target)
+                temporary.replace(target)
+                archive.unlink()
+                self._failed_archive_signatures.pop(archive, None)
+                log.info("[ModStorage] Extracted and removed archive: %s", archive)
+            except Exception as exc:  # noqa: BLE001
+                safe_remove_entry(temporary)
+                self._failed_archive_signatures[archive] = signature
+                log.warning("[ModStorage] Failed to extract %s: %s", archive, exc)
+
     def list_mods_for_skin(self, skin_id: int | str) -> List[SkinModEntry]:
+        with self._storage_lock:
+            return self._list_mods_for_skin(skin_id)
+
+    def _list_mods_for_skin(self, skin_id: int | str) -> List[SkinModEntry]:
         skin_dir = self.get_skin_dir(skin_id)
         if not skin_dir.exists() or not skin_dir.is_dir():
             return []
@@ -104,6 +206,8 @@ class ModStorageService:
         skin_id_int = self._to_int(skin_id)
         if skin_id_int is None:
             return []
+
+        self._extract_archives_in_directory(skin_dir)
 
         champion_id = get_champion_id_from_skin_id(skin_id_int)
         entries: List[SkinModEntry] = []
@@ -164,6 +268,10 @@ class ModStorageService:
         return bool(self.list_mods_for_skin(skin_id))
 
     def list_mods_for_category(self, category: str) -> List[dict]:
+        with self._storage_lock:
+            return self._list_mods_for_category(category)
+
+    def _list_mods_for_category(self, category: str) -> List[dict]:
         """List all mods in a category (maps, fonts, announcers, others)
         
         Args:
@@ -188,6 +296,8 @@ class ModStorageService:
         category_dir = self.mods_root / category
         if not category_dir.exists() or not category_dir.is_dir():
             return []
+
+        self._extract_archives_in_directory(category_dir)
         
         entries = []
         for candidate in sorted(category_dir.iterdir(), key=lambda p: p.name.lower()):
