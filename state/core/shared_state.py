@@ -53,6 +53,11 @@ class SharedState:
     # UI state management
     reset_skin_notification: bool = False  # Flag to reset skin notification debouncing
     chroma_panel_open: bool = False
+
+    # Per-game ChampSelect reset coordination shared by the HTTP poller and
+    # WebSocket phase handler.
+    champ_select_reset_done: bool = False
+    reset_last_locked: bool = False
     
     # Language detection
     current_language: Optional[str] = None  # Current client language (e.g., 'en', 'fr', 'de')

@@ -45,6 +45,8 @@ class PhaseHandler:
     
     def handle_phase_change(self, phase: str, previous_phase: str):
         """Handle phase change"""
+        from threads.handlers.champ_select_reset import note_phase_for_reset
+        note_phase_for_reset(self.state, phase)
         log.info(f"[phase] Phase transition: {previous_phase} → {phase} (swiftplay={self.state.is_swiftplay_mode}, extracted={len(self.state.swiftplay_extracted_mods)}, queue={self.state.current_queue_id})")
         if phase == "Matchmaking":
             if self.state.is_swiftplay_mode:
@@ -105,6 +107,8 @@ class PhaseHandler:
                         log.warning("[phase] ChampSelect in Swiftplay mode - no mods to inject")
             else:
                 # Normal ChampSelect handling
+                from threads.handlers.champ_select_reset import perform_champ_select_reset
+                perform_champ_select_reset(self.state, self.lcu)
                 self.state.locked_champ_id = None
                 self.state.locked_champ_timestamp = 0.0
                 self.state.champion_exchange_triggered = False
